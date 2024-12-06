@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Flight Passenger Volume from 2019-2024</title>
+    <script src="https://d3js.org/d3.v3.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .line {
+            fill: none;
+            stroke-width: 2px;
+            opacity: 0.6;
+        }
+
+        .average-line {
+            fill: none;
+            stroke-width: 2px;
+            stroke-dasharray: 5, 5;
+            opacity: 0.6;
+        }
+
+        .axis path, .axis line {
+            fill: none;
+            stroke: black;
+            shape-rendering: crispEdges;
+        }
+
+        .tooltip {
+            position: absolute;
+            text-align: center;
+            padding: 5px;
+            background: lightsteelblue;
+            border: 1px solid #ccc;
+            pointer-events: none;
+        }
+
+        .line:hover {
+            opacity: 1;
+        }
+
+        .checkbox-container {
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .checkbox-container label {
+            margin: 0 5px;
+            font-size: 16px;
+        }
+
+        .chart-container {
+            display: flex;
+            justify-content: center;
+        }
+
+        svg {
+            margin-top: 20px;
+        }
+
+        .axis-label {
+            font-size: 14px;
+        }
+
+        .legend {
+            font-size: 14px;
+            margin: 10px;
+        }
+
+        .legend .solid {
+            font-weight: bold;
+            color: black;
+        }
+
+        .legend .dashed {
+            font-weight: bold;
+            color: grey;
+        }
+
+        .year-legend {
+            font-size: 14px;
+            display: flex;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+
+        .year-legend div {
+            margin-right: 10px;
+            display: flex;
+            align-items: center;
+        }
+
+        .color-box {
+            width: 15px;
+            height: 15px;
+            margin-right: 5px;
+        }
+
+        .checkbox-container label {
+            font-size: 14px;
+            margin-left: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Flight Passenger Volume from 2019-2024 as of November 24, 2024</h1>
+
+    <div class="checkbox-container">
+        <label><input type="checkbox" id="selectAll" /> Select All</label>
+        <label><input type="checkbox" class="yearCheckbox" value="2019" /> 2019</label>
+        <label><input type="checkbox" class="yearCheckbox" value="2020" /> 2020</label>
+        <label><input type="checkbox" class="yearCheckbox" value="2021" /> 2021</label>
+        <label><input type="checkbox" class="yearCheckbox" value="2022" /> 2022</label>
+        <label><input type="checkbox" class="yearCheckbox" value="2023" /> 2023</label>
+        <label><input type="checkbox" class="yearCheckbox" value="2024" /> 2024</label>
+    </div>
+
+    <div class="chart-container" id="chart"></div>
+    <div id="tooltip" class="tooltip" style="opacity: 0;"></div>
+
+    <div class="legend">
+        <span class="solid">Solid lines:</span> Passenger Volume for the Year<br/>
+        <span class="dashed">Dashed lines:</span> Average Passenger Volume for the Year
+    </div>
+
+    <div class="year-legend" id="yearLegend"></div>
+
+    <div style="text-align: center; margin-top: 20px;">
+        <p>
+            Data source: 
+            <a href="https://www.tsa.gov/travel/passenger-volumes/2019" target="_blank" style="color: #007acc; text-decoration: underline;">
+                TSA Passenger Volumes (2019-2024)
+            </a>
+        </p>
+        <p>
+            Watch explanation: 
+            <a href="https://youtu.be/NQfud5Hc3t8" target="_blank" style="color: #007acc; text-decoration: underline;">
+                Detailed Visualization Walkthrough
+            </a>
+        </p>
+        <p>
+            Documentation: 
+            <a href="Grundy_DataViz_Documentation.pdf" target="_blank" style="color: #007acc; text-decoration: underline;">
+                View Documentation
+            </a>
+        </p>
+    </div>
+    
+    <script>
+        // Load the dataset
+        d3.csv("FlightPassangerVolumeAsOf_Nov_24_2024.csv", function (error, data) {
+            if (error) throw error;
+
+            // Parse the data
+            data.forEach(function (d) {
+                d.Date = new Date("2000/" + d.Date);
+                d.Passengers = +d.Passengers.replace(/,/g, "");
+                
+                // Remove data for February 29th for all years
+                if (d.Date.getMonth() === 1 && d.Date.getDate() === 29) {
+                    d.Passengers = null; // Exclude Feb 29th data for all years
+                }
+
+                // Remove data after Nov 24, 2024 for the year 2024
+                if (d.Year === 2024 && d.Date > new Date("2024-11-24")) {
+                    d.Passengers = null; // Exclude data after Nov 24, 2024
+                }
+            });
+
+            const nestedData = d3.nest().key(d => d.Year).entries(data);
+
+            // Set up SVG dimensions and margins
+            const margin = { top: 20, right: 200, bottom: 50, left: 200 };
+            const width = 960 - margin.left - margin.right;
+            const height = 500 - margin.top - margin.bottom;
+
+            const svg = d3.select("#chart")
+                .append("svg")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+            const xScale = d3.time.scale()
+                .domain([new Date("2000-01-01"), new Date("2000-12-31")])
+                .range([0, width]);
+
+            const yScale = d3.scale.linear()
+                .domain([0, d3.max(data, d => d.Passengers)])
+                .range([height, 0]);
+
+            const xAxis = d3.svg.axis().scale(xScale).orient("bottom").tickFormat(d3.time.format("%b"));
+            const yAxis = d3.svg.axis().scale(yScale).orient("left");
+
+            svg.append("g")
+                .attr("class", "x axis")
+                .attr("transform", "translate(0," + height + ")")
+                .call(xAxis)
+                .append("text")
+                .attr("class", "axis-label")
+                .attr("x", width / 2)
+                .attr("y", 40)
+                .style("text-anchor", "middle")
+                .text("Month");
+
+            svg.append("g")
+                .attr("class", "y axis")
+                .call(yAxis)
+                .append("text")
+                .attr("class", "axis-label")
+                .attr("x", -200)
+                .attr("y", -100)
+                .attr("transform", "rotate(-90)")
+                .style("text-anchor", "middle")
+                .text("Total Passengers");
+
+            const line = d3.svg.line()
+                .x(d => xScale(d.Date))
+                .y(d => yScale(d.Passengers))
+                .interpolate("basis");
+
+            const colorScale = d3.scale.ordinal()
+                .domain(["2019", "2020", "2021", "2022", "2023", "2024"])
+                .range(["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b"]);
+
+            function updateChart() {
+                svg.selectAll(".line").remove();
+                svg.selectAll(".average-line").remove();
+                document.getElementById('yearLegend').innerHTML = "";
+
+                const selectedYears = Array.from(document.querySelectorAll('.yearCheckbox:checked')).map(cb => cb.value);
+
+                selectedYears.forEach(year => {
+                    const yearData = nestedData.find(d => d.key === year).values;
+                    const yearColor = colorScale(year);
+
+                    // Draw the solid line for the year
+                    svg.append("path")
+                        .datum(yearData)
+                        .attr("class", "line")
+                        .attr("d", line)
+                        .style("stroke", yearColor);
+
+                    // Calculate and draw the average line for the year
+                    const averageValue = d3.mean(yearData, d => d.Passengers);
+                    const averageLineData = yearData.map(d => ({ Date: d.Date, Passengers: averageValue }));
+
+                    svg.append("path")
+                        .datum(averageLineData)
+                        .attr("class", "average-line")
+                        .attr("d", line)
+                        .style("stroke", yearColor);
+                });
+
+                // Update the year legend
+                selectedYears.forEach(year => {
+                    const yearColor = colorScale(year);
+                    const legendItem = document.createElement('div');
+                    legendItem.innerHTML = `<div style="background-color: ${yearColor};" class="color-box"></div>${year}`;
+                    document.getElementById('yearLegend').appendChild(legendItem);
+                });
+            }
+
+            // Initial chart rendering
+            updateChart();
+
+            // Year checkbox event listeners
+            document.querySelectorAll('.yearCheckbox').forEach(checkbox => {
+                checkbox.addEventListener('change', updateChart);
+            });
+
+            // "Select All" checkbox event listener
+            document.getElementById('selectAll').addEventListener('change', function () {
+                const allChecked = this.checked;
+                document.querySelectorAll('.yearCheckbox').forEach(checkbox => {
+                    checkbox.checked = allChecked;
+                });
+                updateChart();
+            });
+        });
+    </script>
+</body>
+</html>
